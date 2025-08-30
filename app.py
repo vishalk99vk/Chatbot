@@ -1,93 +1,120 @@
-import os
-import json
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+import time
+import os
 
-# ===================== CONFIG ===================== #
-st.set_page_config(page_title="Live Chat System", layout="wide")
-CHAT_FILE = "chat_data.json"
+# ----------------------------
+# CONFIG
+# ----------------------------
+st.set_page_config(page_title="Secure Chat App", layout="wide")
+ADMIN_PASS = "12345"  # 🔐 Change to a strong password or use st.secrets
 
-# ===================== UTILITIES ===================== #
-def load_chat():
-    """Load chat history from file."""
-    if os.path.exists(CHAT_FILE):
-        with open(CHAT_FILE, "r") as f:
-            return json.load(f)
-    return []
+# ----------------------------
+# AUTO REFRESH (every 1s)
+# ----------------------------
+time.sleep(1)
+st.experimental_rerun()
 
-def save_chat(chat):
-    """Save chat history to file."""
-    with open(CHAT_FILE, "w") as f:
-        json.dump(chat, f)
-
-# ===================== AUTO REFRESH ===================== #
-st_autorefresh(interval=1000, key="refresh")  # Auto refresh every 1s
-
-# ===================== LOGIN PANEL ===================== #
+# ----------------------------
+# INIT SESSION STATE
+# ----------------------------
 if "role" not in st.session_state:
+    st.session_state.role = None
+if "messages" not in st.session_state:
+    st.session_state.messages = []  # Store chat history
+if "files" not in st.session_state:
+    st.session_state.files = []  # Store uploaded files
+
+
+# ----------------------------
+# LOGIN PANEL
+# ----------------------------
+if st.session_state.role is None:
     st.title("🔐 Login Panel")
+
     role = st.radio("Who are you?", ["User", "Admin"])
-    if st.button("Proceed"):
-        st.session_state.role = role
-        st.rerun()
+
+    if role == "Admin":
+        admin_password = st.text_input("Enter Admin Password:", type="password")
+
+        if st.button("Proceed as Admin"):
+            if admin_password == ADMIN_PASS:
+                st.session_state.role = "Admin"
+                st.success("✅ Logged in as Admin!")
+                st.experimental_rerun()
+            else:
+                st.error("❌ Incorrect password")
+
+    else:
+        if st.button("Proceed as User"):
+            st.session_state.role = "User"
+            st.success("✅ Logged in as User!")
+            st.experimental_rerun()
+
     st.stop()
 
-role = st.session_state.role
-st.sidebar.title("⚙️ Options")
-if st.sidebar.button("🔄 Logout"):
-    st.session_state.clear()
-    st.rerun()
 
-st.title(f"💬 Live Chat - {role} Panel")
+# ----------------------------
+# CHAT PANELS
+# ----------------------------
+def render_chat():
+    """Render chat messages."""
+    for sender, msg in st.session_state.messages:
+        if sender == "User":
+            st.markdown(f"🧑 **User:** {msg}")
+        else:
+            st.markdown(f"👨‍💻 **Admin:** {msg}")
 
-# ===================== LOAD CHAT ===================== #
-chat_history = load_chat()
 
-# ===================== SHOW CHAT ===================== #
-st.markdown("### 📜 Chat History")
-for msg in chat_history:
-    if msg["sender"] == "User":
-        st.markdown(
-            f"<div style='background:#e6f7ff; padding:10px; border-radius:10px; margin:5px 0;'><b>User:</b> {msg['text']}</div>",
-            unsafe_allow_html=True,
-        )
-        if msg.get("file"):
-            st.write("📂 File uploaded by User:")
-            st.download_button(
-                label=f"Download {msg['file']['name']}",
-                data=bytes.fromhex(msg["file"]["data"]),
-                file_name=msg["file"]["name"],
-            )
+# ----------------------------
+# USER PANEL
+# ----------------------------
+if st.session_state.role == "User":
+    st.title("💬 User Panel")
 
-    else:  # Admin message
-        st.markdown(
-            f"<div style='background:#fff0f6; padding:10px; border-radius:10px; margin:5px 0; text-align:right;'><b>Admin:</b> {msg['text']}</div>",
-            unsafe_allow_html=True,
-        )
+    render_chat()
 
-# ===================== INPUT SECTION ===================== #
-st.markdown("### ✏️ Send a Message")
+    # Send message
+    user_msg = st.text_input("Type your message:")
+    if st.button("Send", key="user_send") and user_msg:
+        st.session_state.messages.append(("User", user_msg))
+        st.experimental_rerun()
 
-with st.form("chat_form", clear_on_submit=True):
-    message = st.text_input("Type your message...")
-    uploaded_file = st.file_uploader("Upload a file (optional)", type=None)
+    # Upload file
+    uploaded_file = st.file_uploader("📂 Upload a file", type=None)
+    if uploaded_file:
+        size_mb = uploaded_file.size / (1024 * 1024)
+        if size_mb > 200:
+            st.warning("⚠️ Please upload this file on Google Drive and share the link instead.")
+        else:
+            st.session_state.files.append(("User", uploaded_file.name))
+            st.success(f"✅ Uploaded: {uploaded_file.name}")
 
-    submitted = st.form_submit_button("Send")
-    if submitted and (message.strip() or uploaded_file):
-        new_msg = {"sender": role, "text": message.strip(), "file": None}
+    # Logout
+    if st.button("Logout"):
+        st.session_state.role = None
+        st.experimental_rerun()
 
-        # Handle file upload
-        if uploaded_file:
-            file_size_mb = uploaded_file.size / (1024 * 1024)
-            if file_size_mb > 200:
-                st.warning("⚠️ Please upload this file to Google Drive and share the link (file > 200 MB).")
-            else:
-                file_data = uploaded_file.read()
-                new_msg["file"] = {
-                    "name": uploaded_file.name,
-                    "data": file_data.hex()
-                }
 
-        chat_history.append(new_msg)
-        save_chat(chat_history)
-        st.rerun()
+# ----------------------------
+# ADMIN PANEL
+# ----------------------------
+elif st.session_state.role == "Admin":
+    st.title("🛡️ Admin Panel")
+
+    render_chat()
+
+    # Reply
+    admin_msg = st.text_input("Reply to User:")
+    if st.button("Send", key="admin_send") and admin_msg:
+        st.session_state.messages.append(("Admin", admin_msg))
+        st.experimental_rerun()
+
+    # Show uploaded files
+    st.subheader("📂 Uploaded Files")
+    for sender, fname in st.session_state.files:
+        st.markdown(f"📄 From **{sender}**: {fname}")
+
+    # Logout
+    if st.button("Logout"):
+        st.session_state.role = None
+        st.experimental_rerun()
