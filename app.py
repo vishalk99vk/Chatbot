@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import threading
 
 # ----------------------------
 # CONFIG
@@ -18,6 +19,24 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "files" not in st.session_state:
     st.session_state.files = []
+if "chat_running" not in st.session_state:
+    st.session_state.chat_running = False
+
+
+# ----------------------------
+# CHAT UPDATER (runs in thread)
+# ----------------------------
+def chat_updater(placeholder):
+    while st.session_state.chat_running:
+        with placeholder.container():
+            st.subheader("💬 Chat Messages (auto-updating)")
+            for sender, msg, uname in st.session_state.messages:
+                if sender == "User":
+                    st.markdown(f"🧑 **{uname}:** {msg}")
+                else:
+                    st.markdown(f"👨‍💻 **Admin:** {msg}")
+        time.sleep(1)
+
 
 # ----------------------------
 # LOGIN PANEL
@@ -52,23 +71,14 @@ if st.session_state.role is None:
 
 
 # ----------------------------
-# CHAT DISPLAY (AUTO REFRESH)
+# CHAT AREA (ONLY REFRESHES)
 # ----------------------------
 chat_placeholder = st.empty()
 
-def show_chat():
-    with chat_placeholder.container():
-        st.subheader("💬 Chat Messages")
-        for sender, msg, uname in st.session_state.messages:
-            if sender == "User":
-                st.markdown(f"🧑 **{uname}:** {msg}")
-            else:
-                st.markdown(f"👨‍💻 **Admin:** {msg}")
-
-# Run the chat refresh loop (only for display)
-show_chat()
-time.sleep(1)
-st.rerun()   # <-- reruns script every 1s, but ONLY chat re-renders properly
+if not st.session_state.chat_running:
+    st.session_state.chat_running = True
+    thread = threading.Thread(target=chat_updater, args=(chat_placeholder,), daemon=True)
+    thread.start()
 
 
 # ----------------------------
@@ -80,7 +90,6 @@ if st.session_state.role == "User":
     user_msg = st.text_input("Type your message:")
     if st.button("Send", key="user_send") and user_msg:
         st.session_state.messages.append(("User", user_msg, st.session_state.username))
-        st.rerun()
 
     uploaded_file = st.file_uploader("📂 Upload a file")  # no type filter
     if uploaded_file:
@@ -92,6 +101,7 @@ if st.session_state.role == "User":
             st.success(f"✅ Uploaded: {uploaded_file.name}")
 
     if st.button("Logout"):
+        st.session_state.chat_running = False
         st.session_state.role = None
         st.session_state.username = None
         st.rerun()
@@ -106,12 +116,12 @@ elif st.session_state.role == "Admin":
     admin_msg = st.text_input("Reply to User:")
     if st.button("Send", key="admin_send") and admin_msg:
         st.session_state.messages.append(("Admin", admin_msg, None))
-        st.rerun()
 
     st.subheader("📂 Uploaded Files")
     for uname, fname in st.session_state.files:
         st.markdown(f"📄 From **{uname}**: {fname}")
 
     if st.button("Logout"):
+        st.session_state.chat_running = False
         st.session_state.role = None
         st.rerun()
