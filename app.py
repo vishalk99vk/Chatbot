@@ -44,7 +44,7 @@ def timestamp():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 def render_message(role, message, msg_time, file_path=None):
-    """Pretty chat bubbles like WhatsApp, with optional file attachment"""
+    """Pretty chat bubbles like WhatsApp, with optional file/image"""
     if role == "user":
         align = "right"
         color = "#DCF8C6"
@@ -54,22 +54,34 @@ def render_message(role, message, msg_time, file_path=None):
         color = "#EDEDED"
         sender = "👨‍💼 Admin"
 
-    file_html = ""
-    if file_path:
-        filename = os.path.basename(file_path)
-        file_html = f"<br><a href='{file_path}' target='_blank'>📎 {filename}</a>"
-
+    # Chat bubble
     st.markdown(
         f"""
         <div style="text-align:{align}; margin:6px;">
             <div style="background-color:{color}; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
-                {message}{file_html}
+                {message}
             </div><br>
             <small>{sender} • {msg_time}</small>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # File/image handling
+    if file_path and os.path.exists(file_path):
+        filename = os.path.basename(file_path)
+        # If it's an image, show preview
+        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif")):
+            st.image(file_path, caption=filename, use_column_width=True)
+        # Download button for all files
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+        st.download_button(
+            label=f"📎 Download {filename}",
+            data=file_bytes,
+            file_name=filename,
+            mime="application/octet-stream",
+        )
 
 
 # --- Streamlit App ---
