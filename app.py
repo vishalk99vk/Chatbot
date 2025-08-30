@@ -1,6 +1,5 @@
 import streamlit as st
 import time
-import os
 
 # ----------------------------
 # CONFIG
@@ -12,7 +11,7 @@ ADMIN_PASS = "12345"  # 🔐 Change to a strong password or use st.secrets
 # AUTO REFRESH (every 1s)
 # ----------------------------
 time.sleep(1)
-st.experimental_rerun()
+st.rerun()
 
 # ----------------------------
 # INIT SESSION STATE
@@ -40,7 +39,7 @@ if st.session_state.role is None:
             if admin_password == ADMIN_PASS:
                 st.session_state.role = "Admin"
                 st.success("✅ Logged in as Admin!")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("❌ Incorrect password")
 
@@ -48,7 +47,7 @@ if st.session_state.role is None:
         if st.button("Proceed as User"):
             st.session_state.role = "User"
             st.success("✅ Logged in as User!")
-            st.experimental_rerun()
+            st.rerun()
 
     st.stop()
 
@@ -77,7 +76,7 @@ if st.session_state.role == "User":
     user_msg = st.text_input("Type your message:")
     if st.button("Send", key="user_send") and user_msg:
         st.session_state.messages.append(("User", user_msg))
-        st.experimental_rerun()
+        st.rerun()
 
     # Upload file
     uploaded_file = st.file_uploader("📂 Upload a file", type=None)
@@ -92,7 +91,7 @@ if st.session_state.role == "User":
     # Logout
     if st.button("Logout"):
         st.session_state.role = None
-        st.experimental_rerun()
+        st.rerun()
 
 
 # ----------------------------
@@ -107,7 +106,7 @@ elif st.session_state.role == "Admin":
     admin_msg = st.text_input("Reply to User:")
     if st.button("Send", key="admin_send") and admin_msg:
         st.session_state.messages.append(("Admin", admin_msg))
-        st.experimental_rerun()
+        st.rerun()
 
     # Show uploaded files
     st.subheader("📂 Uploaded Files")
@@ -117,4 +116,4 @@ elif st.session_state.role == "Admin":
     # Logout
     if st.button("Logout"):
         st.session_state.role = None
-        st.experimental_rerun()
+        st.rerun()
