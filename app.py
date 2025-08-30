@@ -1,202 +1,184 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import os
 import json
 import time
-import base64
+import uuid
 
-# --- Config ---
+# ---------------- CONFIG ----------------
 CHAT_DIR = "chats"
 USER_DB = "users.json"
-ADMIN_PASSWORD = "admin123"  # Change this
-AI_REPLY = "🤖 Auto-reply: Admin will get back to you shortly!"
+ADMIN_PASSWORD = "admin123"   # Change this!
+BOT_REPLY = "🤖 Auto-reply: Our admin will get back to you shortly."
+REFRESH_INTERVAL = 2000  # ms
 
 if not os.path.exists(CHAT_DIR):
     os.makedirs(CHAT_DIR)
 
-if not os.path.exists(USER_DB):
-    with open(USER_DB, "w") as f:
-        json.dump({}, f)
-
-
-# --- Helpers ---
+# ---------------- Helper Functions ----------------
 def get_chat_path(user_id):
     return os.path.join(CHAT_DIR, f"{user_id}.json")
-
 
 def load_chat(user_id):
     path = get_chat_path(user_id)
     if os.path.exists(path):
         with open(path, "r") as f:
             return json.load(f)
-    return {"history": [], "last_read_user": 0, "last_read_admin": 0}
+    return []
 
-
-def save_chat(user_id, chat_data):
+def save_chat(user_id, chat_history):
     path = get_chat_path(user_id)
     with open(path, "w") as f:
-        json.dump(chat_data, f, indent=2)
-
-
-def get_all_users():
-    return [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
-
-
-def timestamp():
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-
+        json.dump(chat_history, f, indent=2)
 
 def load_users():
-    with open(USER_DB, "r") as f:
-        return json.load(f)
-
+    if os.path.exists(USER_DB):
+        with open(USER_DB, "r") as f:
+            return json.load(f)
+    return {}
 
 def save_users(users):
     with open(USER_DB, "w") as f:
         json.dump(users, f, indent=2)
 
+def get_all_users():
+    return [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
 
-def add_ai_reply_if_needed(user_id, chat_data):
-    # If last user msg >3 mins ago and no admin reply after that
-    if not chat_data["history"]:
-        return chat_data
-    last_msg = chat_data["history"][-1]
-    if last_msg["role"] == "user":
-        msg_time = time.mktime(time.strptime(last_msg["time"], "%Y-%m-%d %H:%M:%S"))
-        if time.time() - msg_time > 180:  # 3 minutes
-            chat_data["history"].append(
-                {"role": "admin", "message": AI_REPLY, "time": timestamp()}
-            )
-    return chat_data
+def timestamp():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
+def add_message(user_id, role, message, file_path=None):
+    chat = load_chat(user_id)
+    chat.append({
+        "role": role,
+        "message": message,
+        "time": timestamp(),
+        "file": file_path,
+        "read": False if role == "user" else True  # admin messages auto-mark read
+    })
+    save_chat(user_id, chat)
 
-def render_file_download(file_data, filename):
-    b64 = base64.b64encode(file_data).decode()
-    href = f'<a href="data:file/octet-stream;base64,{b64}" download="{filename}">📥 {filename}</a>'
-    st.markdown(href, unsafe_allow_html=True)
+def mark_as_read(user_id):
+    chat = load_chat(user_id)
+    updated = False
+    for msg in chat:
+        if msg["role"] == "user":
+            msg["read"] = True
+            updated = True
+    if updated:
+        save_chat(user_id, chat)
 
+# ---------------- Streamlit UI ----------------
+st.set_page_config(page_title="💬 Live Chat", layout="wide")
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Live Chat", layout="wide")
+# Auto refresh by default
+st_autorefresh(interval=REFRESH_INTERVAL, key="refresh")
 
-tab1, tab2 = st.tabs(["👤 User", "🛠️ Admin"])
+st.title("💬 Live Chat System")
 
-st.sidebar.checkbox("🔄 Auto-refresh (2s)", value=True, key="autorefresh")
-if st.session_state.autorefresh:
-    st.sidebar.write("Auto-refresh enabled")
-    st.experimental_autorefresh(interval=2000, key="refresh")
+menu = st.sidebar.radio("Login as:", ["User", "Admin"])
 
+# ---------------- USER SECTION ----------------
+if menu == "User":
+    tabs = st.tabs(["🔑 Login", "📝 Register"])
 
-# --- User Tab ---
-with tab1:
-    st.header("👤 User Portal")
-
-    users = load_users()
-    mode = st.radio("Choose Action", ["Login", "Register"])
-
-    if mode == "Register":
+    # ---- Register ----
+    with tabs[1]:
+        st.subheader("Create New Account")
         new_user = st.text_input("Choose a User ID:")
-        new_pwd = st.text_input("Choose Password:", type="password")
+        new_pass = st.text_input("Set Password:", type="password")
         if st.button("Register"):
+            users = load_users()
             if new_user in users:
-                st.error("User already exists!")
+                st.error("⚠️ User already exists!")
             else:
-                users[new_user] = new_pwd
+                users[new_user] = {"password": new_pass}
                 save_users(users)
-                st.success("✅ Registered! Now login.")
+                st.success("✅ Registered successfully! Please login.")
 
-    elif mode == "Login":
+    # ---- Login ----
+    with tabs[0]:
+        st.subheader("Login")
         user_id = st.text_input("User ID:")
-        pwd = st.text_input("Password:", type="password")
-        if st.button("Login", key="user_login"):
-            if user_id in users and users[user_id] == pwd:
-                st.session_state.user_logged_in = user_id
-                st.success(f"✅ Logged in as {user_id}")
-                st.rerun()
+        user_pass = st.text_input("Password:", type="password")
+        if st.button("Login"):
+            users = load_users()
+            if user_id in users and users[user_id]["password"] == user_pass:
+                st.session_state["user_logged_in"] = True
+                st.session_state["user_id"] = user_id
+                st.success("✅ Logged in!")
+                st.experimental_rerun()
             else:
                 st.error("❌ Invalid credentials")
 
-    if "user_logged_in" in st.session_state:
-        user_id = st.session_state.user_logged_in
-        chat_data = load_chat(user_id)
+    # ---- Chat Window ----
+    if st.session_state.get("user_logged_in", False):
+        user_id = st.session_state["user_id"]
+        st.subheader(f"Chat - {user_id}")
+        chat_history = load_chat(user_id)
 
-        # Show unread counter
-        unread = len(chat_data["history"]) - chat_data["last_read_user"]
-        st.subheader(f"💬 Chat Window {'🔴 ('+str(unread)+')' if unread>0 else ''}")
-
-        # Mark as read
-        chat_data["last_read_user"] = len(chat_data["history"])
-        save_chat(user_id, chat_data)
-
-        for chat in chat_data["history"]:
+        for chat in chat_history:
             msg_time = chat.get("time", "")
             if chat["role"] == "user":
                 st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
             else:
                 st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
-            # Show download if file
             if chat.get("file"):
-                render_file_download(base64.b64decode(chat["file"]), chat["filename"])
+                with open(chat["file"], "rb") as f:
+                    st.download_button("⬇️ Download File", f, file_name=os.path.basename(chat["file"]))
 
-        user_msg = st.text_input("Type your message:", key="user_input")
-        user_file = st.file_uploader("Attach file (optional):", key="user_file")
-        if st.button("Send", key="user_send"):
-            if user_msg or user_file:
-                entry = {"role": "user", "message": user_msg, "time": timestamp()}
-                if user_file:
-                    entry["file"] = base64.b64encode(user_file.read()).decode()
-                    entry["filename"] = user_file.name
-                chat_data["history"].append(entry)
-                save_chat(user_id, chat_data)
-                st.rerun()
+        user_msg = st.text_input("Type your message:")
+        user_file = st.file_uploader("Upload a file:", key=str(uuid.uuid4()))
+        if st.button("Send"):
+            file_path = None
+            if user_file:
+                file_path = os.path.join(CHAT_DIR, f"{uuid.uuid4()}_{user_file.name}")
+                with open(file_path, "wb") as f:
+                    f.write(user_file.read())
+            if user_msg or file_path:
+                add_message(user_id, "user", user_msg, file_path)
+                st.experimental_rerun()
 
-
-# --- Admin Tab ---
-with tab2:
-    st.header("🛠️ Admin Portal")
-
+# ---------------- ADMIN SECTION ----------------
+elif menu == "Admin":
     if "admin_authenticated" not in st.session_state:
         st.session_state.admin_authenticated = False
 
     if not st.session_state.admin_authenticated:
         pwd = st.text_input("Enter Admin Password:", type="password")
-        if st.button("Login as Admin"):
+        if st.button("Login"):
             if pwd == ADMIN_PASSWORD:
                 st.session_state.admin_authenticated = True
                 st.success("✅ Logged in as Admin")
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("❌ Wrong Password")
 
     else:
         if st.button("🚪 Logout"):
             st.session_state.admin_authenticated = False
-            st.rerun()
+            st.experimental_rerun()
 
         user_list = get_all_users()
         if user_list:
-            # Show unread counts
-            annotated_users = []
+            # Show unread indicator
+            unread_badges = []
             for u in user_list:
-                chat_data = load_chat(u)
-                unread_admin = len(chat_data["history"]) - chat_data["last_read_admin"]
-                if unread_admin > 0:
-                    annotated_users.append(f"{u} 🔴 ({unread_admin})")
+                chat = load_chat(u)
+                unread = any(not msg.get("read", True) for msg in chat if msg["role"] == "user")
+                if unread:
+                    unread_badges.append(f"🔴 {u}")
                 else:
-                    annotated_users.append(u)
+                    unread_badges.append(u)
 
-            selected_label = st.selectbox("Select a user:", annotated_users)
-            selected_user = selected_label.split(" ")[0]  # remove 🔴 part
-            chat_data = load_chat(selected_user)
-            chat_data = add_ai_reply_if_needed(selected_user, chat_data)
+            selected_user = st.selectbox("Select a user:", unread_badges)
+            selected_user = selected_user.replace("🔴 ", "")
+
+            chat_history = load_chat(selected_user)
 
             st.markdown(f"### Chat with {selected_user}")
-
-            # Mark as read
-            chat_data["last_read_admin"] = len(chat_data["history"])
-            save_chat(selected_user, chat_data)
-
-            for chat in chat_data["history"]:
+            for chat in chat_history:
                 msg_time = chat.get("time", "")
                 if chat["role"] == "user":
                     st.markdown(f"<div style='text-align:left; color:blue;'>🧑‍💻 User ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
@@ -204,25 +186,36 @@ with tab2:
                     st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
                 if chat.get("file"):
-                    render_file_download(base64.b64decode(chat["file"]), chat["filename"])
+                    with open(chat["file"], "rb") as f:
+                        st.download_button("⬇️ Download File", f, file_name=os.path.basename(chat["file"]))
 
-            admin_msg = st.text_input("Your Reply:", key="admin_reply")
-            admin_file = st.file_uploader("Attach file (optional):", key="admin_file")
+            # Reply box
+            admin_msg = st.text_input("Your Reply:")
+            admin_file = st.file_uploader("Upload a file (Admin):", key=str(uuid.uuid4()))
             if st.button("Send Reply"):
-                if admin_msg or admin_file:
-                    entry = {"role": "admin", "message": admin_msg, "time": timestamp()}
-                    if admin_file:
-                        entry["file"] = base64.b64encode(admin_file.read()).decode()
-                        entry["filename"] = admin_file.name
-                    chat_data["history"].append(entry)
-                    save_chat(selected_user, chat_data)
-                    st.rerun()
+                file_path = None
+                if admin_file:
+                    file_path = os.path.join(CHAT_DIR, f"{uuid.uuid4()}_{admin_file.name}")
+                    with open(file_path, "wb") as f:
+                        f.write(admin_file.read())
+                if admin_msg or file_path:
+                    add_message(selected_user, "admin", admin_msg, file_path)
+                    mark_as_read(selected_user)
+                    st.experimental_rerun()
 
             # Delete chat option
             if st.button("🗑️ Delete Chat"):
                 os.remove(get_chat_path(selected_user))
-                st.success("Chat deleted")
-                st.rerun()
+                st.warning("Chat deleted!")
+                st.experimental_rerun()
+
+            # AI Auto-reply after 3 mins if no admin response
+            if chat_history and chat_history[-1]["role"] == "user":
+                last_msg_time = time.mktime(time.strptime(chat_history[-1]["time"], "%Y-%m-%d %H:%M:%S"))
+                if time.time() - last_msg_time > 180:  # 3 minutes
+                    add_message(selected_user, "admin", BOT_REPLY)
+                    mark_as_read(selected_user)
+                    st.experimental_rerun()
 
         else:
             st.info("No users have started a chat yet.")
