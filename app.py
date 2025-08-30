@@ -95,7 +95,7 @@ def save_users(users):
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Live Chat", layout="wide")
-st.title("💬 Secure Live Chat BOT")
+st.title("💬 Enquiry Chatbot")
 
 menu = st.sidebar.radio("Login as:", ["User", "Admin"])
 
