@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # -----------------------------
 USERS_FILE = "users.json"
 CHATS_DIR = "chats"
-ADMIN_USERNAME = "oyeduggu"
+ADMIN_USERNAME = "admin"
 
 if not os.path.exists(CHATS_DIR):
     os.makedirs(CHATS_DIR)
@@ -104,21 +104,16 @@ if st.session_state.user:
     # ------------------- ADMIN DASHBOARD -------------------
     if username == ADMIN_USERNAME:
         st.title("📢 Admin Dashboard")
-        st.write("Select a user to chat with:")
-
         users = [u for u in load_users().keys() if u != ADMIN_USERNAME]
-        for u in users:
-            chat = load_chat(u)
-            unread = any(msg.get("sender") == u and not msg.get("read", False) for msg in chat)
-            red_dot = " 🔴" if unread else ""
-            if st.button(f"Chat with {u}{red_dot}"):
-                st.session_state.active_chat = u
 
-        if "active_chat" in st.session_state:
-            active_user = st.session_state.active_chat
-            st.subheader(f"Chat with {active_user}")
+        if users:
+            selected_user = st.selectbox("Select a user", users)
+            chat = load_chat(selected_user)
+            unread = any(msg.get("sender") == selected_user and not msg.get("read", False) for msg in chat)
+            if unread:
+                st.markdown(f"🔴 {sum(1 for msg in chat if msg.get('sender')==selected_user and not msg.get('read',False))} unread message(s)")
 
-            chat = load_chat(active_user)
+            st.subheader(f"Chat with {selected_user}")
             for msg in chat:
                 sender = msg.get("sender", "unknown")
                 time = msg.get("time", "")
@@ -136,6 +131,7 @@ if st.session_state.user:
                             mime="application/octet-stream"
                         )
 
+            # Admin message input
             admin_msg = st.text_input("Your message", key="admin_msg")
             uploaded_file = st.file_uploader("Send file", key="admin_file")
             if st.button("Send", key="admin_send"):
@@ -144,14 +140,30 @@ if st.session_state.user:
                     file_path = os.path.join(CHATS_DIR, uploaded_file.name)
                     with open(file_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
-                add_message(active_user, "admin", admin_msg, file_path)
+                add_message(selected_user, "admin", admin_msg, file_path)
                 st.experimental_rerun()
 
+            # Delete chat
             if st.button("❌ Delete Chat"):
-                os.remove(get_chat_file(active_user))
-                st.success("Chat deleted")
-                del st.session_state.active_chat
+                os.remove(get_chat_file(selected_user))
+                st.success("Chat deleted!")
                 st.experimental_rerun()
+
+            # Delete user
+            if st.button("🗑️ Delete User"):
+                # Remove from users.json
+                users_data = load_users()
+                if selected_user in users_data:
+                    del users_data[selected_user]
+                    save_users(users_data)
+                # Remove chat file
+                chat_file = get_chat_file(selected_user)
+                if os.path.exists(chat_file):
+                    os.remove(chat_file)
+                st.success(f"User {selected_user} and their chat deleted!")
+                st.experimental_rerun()
+        else:
+            st.info("No users available.")
 
     # ------------------- USER DASHBOARD -------------------
     else:
