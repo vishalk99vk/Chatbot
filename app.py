@@ -167,7 +167,7 @@ if st.session_state.user:
 
     # ------------------- USER DASHBOARD -------------------
     else:
-        st.title(f"💬 Chat with Admin")
+        st.title(f"💬 Chat with BOT")
         chat = load_chat(username)
 
         unread = any(msg.get("sender") == "admin" and not msg.get("read", False) for msg in chat)
