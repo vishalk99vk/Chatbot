@@ -120,7 +120,10 @@ if st.session_state.user:
 
             chat = load_chat(active_user)
             for msg in chat:
-                st.write(f"**{msg['sender']}** [{msg['time']}]: {msg['message']}")
+               sender = msg.get("sender", "unknown")
+               time = msg.get("time", "")
+               message = msg.get("message", "")
+               st.write(f"**{sender}** [{time}]: {message}")
                 if "file" in msg and isinstance(msg["file"], str) and os.path.exists(msg["file"]):
                     file_path = msg["file"]
                     file_name = os.path.basename(file_path)
