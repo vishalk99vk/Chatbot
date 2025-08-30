@@ -109,7 +109,7 @@ if st.session_state.user:
         users = [u for u in load_users().keys() if u != ADMIN_USERNAME]
         for u in users:
             chat = load_chat(u)
-            unread = any(msg["sender"] == u and not msg.get("read", False) for msg in chat)
+            unread = any(msg.get("sender") == u and not msg.get("read", False) for msg in chat)
             red_dot = " 🔴" if unread else ""
             if st.button(f"Chat with {u}{red_dot}"):
                 st.session_state.active_chat = u
