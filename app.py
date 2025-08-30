@@ -1,11 +1,11 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+import time
 
 # ----------------------------
 # CONFIG
 # ----------------------------
 st.set_page_config(page_title="Secure Chat App", layout="wide")
-ADMIN_PASS = "12345"  # Change this to strong password or move to st.secrets
+ADMIN_PASS = "12345"  # Change this for security
 
 # ----------------------------
 # INIT SESSION STATE
@@ -19,7 +19,6 @@ if "messages" not in st.session_state:
 if "files" not in st.session_state:
     st.session_state.files = []
 
-
 # ----------------------------
 # LOGIN PANEL
 # ----------------------------
@@ -30,7 +29,6 @@ if st.session_state.role is None:
 
     if role == "Admin":
         admin_password = st.text_input("Enter Admin Password:", type="password")
-
         if st.button("Proceed as Admin"):
             if admin_password == ADMIN_PASS:
                 st.session_state.role = "Admin"
@@ -54,12 +52,12 @@ if st.session_state.role is None:
 
 
 # ----------------------------
-# CHAT REFRESHABLE CONTAINER
+# CHAT DISPLAY (AUTO REFRESH)
 # ----------------------------
-chat_container = st.empty()
+chat_placeholder = st.empty()
 
-def render_chat():
-    with chat_container.container():
+def show_chat():
+    with chat_placeholder.container():
         st.subheader("💬 Chat Messages")
         for sender, msg, uname in st.session_state.messages:
             if sender == "User":
@@ -67,9 +65,10 @@ def render_chat():
             else:
                 st.markdown(f"👨‍💻 **Admin:** {msg}")
 
-# Refresh ONLY chat every 1 sec
-st_autorefresh(interval=1000, key="chat_refresh")
-render_chat()
+# Run the chat refresh loop (only for display)
+show_chat()
+time.sleep(1)
+st.rerun()   # <-- reruns script every 1s, but ONLY chat re-renders properly
 
 
 # ----------------------------
