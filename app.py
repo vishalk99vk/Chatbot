@@ -8,7 +8,7 @@ import hashlib
 CHAT_DIR = "chats"
 UPLOAD_DIR = "uploads"
 USER_DB = "users.json"
-ADMIN_PASSWORD = "admin123"  # change this
+ADMIN_PASSWORD = "Vishal@12345"  # change this
 
 # Ensure directories exist
 os.makedirs(CHAT_DIR, exist_ok=True)
