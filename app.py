@@ -42,34 +42,35 @@ def get_time():
 st_autorefresh(interval=2000, key="refresh")  # 2 sec refresh
 
 # ----------------- LOGIN / REGISTER -----------------
-st.title("🔐 Chat App")
+st.title("💬 Chat App")
 
-tab1, tab2 = st.tabs(["Login", "Register"])
+if "username" not in st.session_state:
+    tab1, tab2 = st.tabs(["Login", "Register"])
 
-with tab2:
-    st.subheader("Register")
-    new_user = st.text_input("Username", key="reg_user")
-    new_pass = st.text_input("Password", type="password", key="reg_pass")
-    if st.button("Register"):
-        users = load_users()
-        if new_user in users:
-            st.warning("Username already exists!")
-        else:
-            users[new_user] = {"password": new_pass}
-            save_users(users)
-            st.success("Registration successful! Please login.")
+    with tab2:
+        st.subheader("Register")
+        new_user = st.text_input("Username", key="reg_user")
+        new_pass = st.text_input("Password", type="password", key="reg_pass")
+        if st.button("Register"):
+            users = load_users()
+            if new_user in users:
+                st.warning("Username already exists!")
+            else:
+                users[new_user] = {"password": new_pass}
+                save_users(users)
+                st.success("Registration successful! Please login.")
 
-with tab1:
-    st.subheader("Login")
-    username = st.text_input("Username", key="login_user")
-    password = st.text_input("Password", type="password", key="login_pass")
-    if st.button("Login"):
-        users = load_users()
-        if username in users and users[username]["password"] == password:
-            st.session_state["username"] = username
-            st.experimental_rerun()
-        else:
-            st.error("Invalid username or password")
+    with tab1:
+        st.subheader("Login")
+        username = st.text_input("Username", key="login_user")
+        password = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Login"):
+            users = load_users()
+            if username in users and users[username]["password"] == password:
+                st.session_state["username"] = username
+                st.experimental_rerun()
+            else:
+                st.error("Invalid username or password")
 
 # ----------------- MAIN APP -----------------
 if "username" in st.session_state:
@@ -105,7 +106,6 @@ if "username" in st.session_state:
                 else:
                     st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
-                # ✅ File download handling
                 if "file" in chat and os.path.exists(chat["file"]):
                     file_path = chat["file"]
                     file_name = os.path.basename(file_path)
@@ -142,7 +142,6 @@ if "username" in st.session_state:
                 save_chat(chat_data)
                 st.experimental_rerun()
 
-            # Delete chat option
             if st.button("❌ Delete Chat"):
                 del chat_data[selected_user]
                 save_chat(chat_data)
@@ -164,7 +163,6 @@ if "username" in st.session_state:
             else:
                 st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
-            # ✅ File download handling
             if "file" in chat and os.path.exists(chat["file"]):
                 file_path = chat["file"]
                 file_name = os.path.basename(file_path)
@@ -177,7 +175,6 @@ if "username" in st.session_state:
                         key=f"dl_user_{idx}"
                     )
 
-        # Mark all as read for user
         chat_data[user]["last_read_user"] = len(chat_history)
         save_chat(chat_data)
 
