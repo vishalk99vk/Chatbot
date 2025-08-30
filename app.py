@@ -1,199 +1,183 @@
 import streamlit as st
 import os
 import json
-import datetime
+import hashlib
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-# ----------------- CONFIG -----------------
+# -----------------------------
+# CONFIG
+# -----------------------------
 USERS_FILE = "users.json"
-CHAT_FILE = "chat.json"
+CHATS_DIR = "chats"
 ADMIN_USERNAME = "admin"
 
-# Ensure data files exist
-if not os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "w") as f:
-        json.dump({}, f)
+if not os.path.exists(CHATS_DIR):
+    os.makedirs(CHATS_DIR)
 
-if not os.path.exists(CHAT_FILE):
-    with open(CHAT_FILE, "w") as f:
-        json.dump({}, f)
-
-# ----------------- HELPERS -----------------
+# -----------------------------
+# HELPER FUNCTIONS
+# -----------------------------
 def load_users():
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
 def save_users(users):
     with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
+        json.dump(users, f)
 
-def load_chat():
-    with open(CHAT_FILE, "r") as f:
-        return json.load(f)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-def save_chat(chat):
-    with open(CHAT_FILE, "w") as f:
-        json.dump(chat, f, indent=2)
+def get_chat_file(username):
+    return os.path.join(CHATS_DIR, f"{username}.json")
 
-def get_time():
-    return datetime.datetime.now().strftime("%H:%M:%S")
+def load_chat(username):
+    chat_file = get_chat_file(username)
+    if os.path.exists(chat_file):
+        with open(chat_file, "r") as f:
+            return json.load(f)
+    return []
 
-# ----------------- AUTO REFRESH -----------------
-st_autorefresh(interval=2000, key="refresh")  # 2 sec refresh
+def save_chat(username, chat):
+    with open(get_chat_file(username), "w") as f:
+        json.dump(chat, f)
 
-# ----------------- LOGIN / REGISTER -----------------
-st.title("💬 Chat App")
+def add_message(username, sender, message, file_path=None):
+    chat = load_chat(username)
+    chat.append({
+        "sender": sender,
+        "message": message,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "file": file_path,
+        "read": sender == username  # Mark as read if it's user sending
+    })
+    save_chat(username, chat)
 
-if "username" not in st.session_state:
-    tab1, tab2 = st.tabs(["Login", "Register"])
+# -----------------------------
+# AUTH SYSTEM
+# -----------------------------
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-    with tab2:
-        st.subheader("Register")
-        new_user = st.text_input("Username", key="reg_user")
-        new_pass = st.text_input("Password", type="password", key="reg_pass")
-        if st.button("Register"):
-            users = load_users()
-            if new_user in users:
-                st.warning("Username already exists!")
-            else:
-                users[new_user] = {"password": new_pass}
-                save_users(users)
-                st.success("Registration successful! Please login.")
+tabs = st.tabs(["Login", "Register"])
 
-    with tab1:
-        st.subheader("Login")
-        username = st.text_input("Username", key="login_user")
-        password = st.text_input("Password", type="password", key="login_pass")
-        if st.button("Login"):
-            users = load_users()
-            if username in users and users[username]["password"] == password:
-                st.session_state["username"] = username
-                st.experimental_rerun()
-            else:
-                st.error("Invalid username or password")
+with tabs[0]:
+    st.subheader("Login")
+    login_username = st.text_input("Username", key="login_user")
+    login_password = st.text_input("Password", type="password", key="login_pass")
+    if st.button("Login"):
+        users = load_users()
+        if login_username in users and users[login_username] == hash_password(login_password):
+            st.session_state.user = login_username
+            st.success(f"Logged in as {login_username}")
+        else:
+            st.error("Invalid username or password")
 
-# ----------------- MAIN APP -----------------
-if "username" in st.session_state:
-    user = st.session_state["username"]
-    st.sidebar.success(f"✅ Logged in as {user}")
-    chat_data = load_chat()
+with tabs[1]:
+    st.subheader("Register")
+    reg_username = st.text_input("New Username", key="reg_user")
+    reg_password = st.text_input("New Password", type="password", key="reg_pass")
+    if st.button("Register"):
+        users = load_users()
+        if reg_username in users:
+            st.error("Username already exists")
+        else:
+            users[reg_username] = hash_password(reg_password)
+            save_users(users)
+            st.success("Registered successfully! Please login.")
 
-    # Ensure user chat exists
-    if user != ADMIN_USERNAME and user not in chat_data:
-        chat_data[user] = {"messages": [], "last_read_admin": 0, "last_read_user": 0}
-        save_chat(chat_data)
+# -----------------------------
+# MAIN APP
+# -----------------------------
+if st.session_state.user:
+    st_autorefresh(interval=3000, key="refresh")  # Auto refresh every 3s
+    st.sidebar.title("Menu")
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.user = None
+        st.experimental_rerun()
 
-    # ----------------- ADMIN PANEL -----------------
-    if user == ADMIN_USERNAME:
-        st.header("👨‍💼 Admin Dashboard")
+    username = st.session_state.user
 
-        if chat_data:
-            user_list = []
-            for uname, ch in chat_data.items():
-                unread = len(ch["messages"]) - ch["last_read_admin"]
-                badge = f" 🔴({unread})" if unread > 0 else ""
-                user_list.append(f"{uname}{badge}")
+    # ------------------- ADMIN DASHBOARD -------------------
+    if username == ADMIN_USERNAME:
+        st.title("📢 Admin Dashboard")
+        st.write("Select a user to chat with:")
 
-            selected = st.selectbox("Select user", user_list)
-            selected_user = selected.split("🔴")[0].strip()
-            st.subheader(f"Chat with {selected_user}")
+        users = [u for u in load_users().keys() if u != ADMIN_USERNAME]
+        for u in users:
+            chat = load_chat(u)
+            unread = any(msg["sender"] == u and not msg.get("read", False) for msg in chat)
+            red_dot = " 🔴" if unread else ""
+            if st.button(f"Chat with {u}{red_dot}"):
+                st.session_state.active_chat = u
 
-            chat_history = chat_data[selected_user]["messages"]
-            for idx, chat in enumerate(chat_history):
-                msg_time = chat.get("time", "")
-                if chat["role"] == "user":
-                    st.markdown(f"<div style='text-align:left; color:blue;'>🧑‍💻 {selected_user} ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+        if "active_chat" in st.session_state:
+            active_user = st.session_state.active_chat
+            st.subheader(f"Chat with {active_user}")
 
-                if "file" in chat and os.path.exists(chat["file"]):
-                    file_path = chat["file"]
+            chat = load_chat(active_user)
+            for msg in chat:
+                st.write(f"**{msg['sender']}** [{msg['time']}]: {msg['message']}")
+                if "file" in msg and isinstance(msg["file"], str) and os.path.exists(msg["file"]):
+                    file_path = msg["file"]
                     file_name = os.path.basename(file_path)
                     with open(file_path, "rb") as f:
                         st.download_button(
                             label=f"⬇️ Download {file_name}",
                             data=f,
                             file_name=file_name,
-                            mime="application/octet-stream",
-                            key=f"dl_admin_{idx}"
+                            mime="application/octet-stream"
                         )
 
-            # Mark all messages read for admin
-            chat_data[selected_user]["last_read_admin"] = len(chat_history)
-            save_chat(chat_data)
-
-            msg = st.text_input("Type your message")
-            file_upload = st.file_uploader("Upload a file", key="admin_file")
-
-            if st.button("Send", key="send_admin"):
+            admin_msg = st.text_input("Your message", key="admin_msg")
+            uploaded_file = st.file_uploader("Send file", key="admin_file")
+            if st.button("Send", key="admin_send"):
                 file_path = None
-                if file_upload:
-                    file_path = os.path.join("uploads", file_upload.name)
-                    os.makedirs("uploads", exist_ok=True)
+                if uploaded_file:
+                    file_path = os.path.join(CHATS_DIR, uploaded_file.name)
                     with open(file_path, "wb") as f:
-                        f.write(file_upload.read())
-
-                chat_history.append({
-                    "role": "admin",
-                    "message": msg,
-                    "time": get_time(),
-                    "file": file_path
-                })
-                save_chat(chat_data)
+                        f.write(uploaded_file.getbuffer())
+                add_message(active_user, "admin", admin_msg, file_path)
                 st.experimental_rerun()
 
             if st.button("❌ Delete Chat"):
-                del chat_data[selected_user]
-                save_chat(chat_data)
+                os.remove(get_chat_file(active_user))
+                st.success("Chat deleted")
+                del st.session_state.active_chat
                 st.experimental_rerun()
 
-    # ----------------- USER PANEL -----------------
+    # ------------------- USER DASHBOARD -------------------
     else:
-        st.header("💬 Chat Window")
+        st.title(f"💬 Chat with Admin")
+        chat = load_chat(username)
 
-        chat_history = chat_data[user]["messages"]
-        unread = len(chat_history) - chat_data[user]["last_read_user"]
-        if unread > 0:
-            st.subheader(f"🔴 You have {unread} unread message(s)")
-
-        for idx, chat in enumerate(chat_history):
-            msg_time = chat.get("time", "")
-            if chat["role"] == "user":
-                st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-
-            if "file" in chat and os.path.exists(chat["file"]):
-                file_path = chat["file"]
+        for msg in chat:
+            st.write(f"**{msg['sender']}** [{msg['time']}]: {msg['message']}")
+            if "file" in msg and isinstance(msg["file"], str) and os.path.exists(msg["file"]):
+                file_path = msg["file"]
                 file_name = os.path.basename(file_path)
                 with open(file_path, "rb") as f:
                     st.download_button(
                         label=f"⬇️ Download {file_name}",
                         data=f,
                         file_name=file_name,
-                        mime="application/octet-stream",
-                        key=f"dl_user_{idx}"
+                        mime="application/octet-stream"
                     )
+            # Mark admin messages as read when displayed
+            if msg["sender"] == "admin":
+                msg["read"] = True
+        save_chat(username, chat)
 
-        chat_data[user]["last_read_user"] = len(chat_history)
-        save_chat(chat_data)
-
-        msg = st.text_input("Type your message")
-        file_upload = st.file_uploader("Upload a file", key="user_file")
-
-        if st.button("Send", key="send_user"):
+        user_msg = st.text_input("Your message", key="user_msg")
+        uploaded_file = st.file_uploader("Send file", key="user_file")
+        if st.button("Send", key="user_send"):
             file_path = None
-            if file_upload:
-                file_path = os.path.join("uploads", file_upload.name)
-                os.makedirs("uploads", exist_ok=True)
+            if uploaded_file:
+                file_path = os.path.join(CHATS_DIR, uploaded_file.name)
                 with open(file_path, "wb") as f:
-                    f.write(file_upload.read())
-
-            chat_history.append({
-                "role": "user",
-                "message": msg,
-                "time": get_time(),
-                "file": file_path
-            })
-            save_chat(chat_data)
+                    f.write(uploaded_file.getbuffer())
+            add_message(username, username, user_msg, file_path)
             st.experimental_rerun()
