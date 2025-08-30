@@ -3,9 +3,11 @@ import os
 import json
 import time
 from streamlit_autorefresh import st_autorefresh
+import hashlib
 
 CHAT_DIR = "chats"
 UPLOAD_DIR = "uploads"
+USER_DB = "users.json"
 ADMIN_PASSWORD = "admin123"  # change this
 
 # Ensure directories exist
@@ -32,7 +34,6 @@ def get_all_users():
     return [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
 
 def get_unread_users():
-    """Users whose last message is from the user (not admin)"""
     unread = []
     for u in get_all_users():
         chats = load_chat(u)
@@ -44,7 +45,6 @@ def timestamp():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 def render_message(role, message, msg_time, file_path=None):
-    """Pretty chat bubbles like WhatsApp, with optional file/image"""
     if role == "user":
         align = "right"
         color = "#DCF8C6"
@@ -54,7 +54,6 @@ def render_message(role, message, msg_time, file_path=None):
         color = "#EDEDED"
         sender = "👨‍💼 Admin"
 
-    # Chat bubble
     st.markdown(
         f"""
         <div style="text-align:{align}; margin:6px;">
@@ -67,13 +66,10 @@ def render_message(role, message, msg_time, file_path=None):
         unsafe_allow_html=True,
     )
 
-    # File/image handling
     if file_path and os.path.exists(file_path):
         filename = os.path.basename(file_path)
-        # If it's an image, show preview
         if filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif")):
             st.image(file_path, caption=filename, use_column_width=True)
-        # Download button for all files
         with open(file_path, "rb") as f:
             file_bytes = f.read()
         st.download_button(
@@ -83,14 +79,26 @@ def render_message(role, message, msg_time, file_path=None):
             mime="application/octet-stream",
         )
 
+# --- Authentication Helpers ---
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_users():
+    if os.path.exists(USER_DB):
+        with open(USER_DB, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USER_DB, "w") as f:
+        json.dump(users, f, indent=2)
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Live Chat", layout="wide")
-st.title("💬 Live Chat System (User ↔ Admin)")
+st.title("💬 Secure Live Chat System")
 
 menu = st.sidebar.radio("Login as:", ["User", "Admin"])
 
-# Auto-refresh every 2 seconds for live effect
 st_autorefresh_enabled = st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=True)
 if st_autorefresh_enabled:
     st_autorefresh(interval=2000, key="refresh")
@@ -98,8 +106,36 @@ if st_autorefresh_enabled:
 
 # --- User Section ---
 if menu == "User":
-    user_id = st.text_input("Enter your User ID (any unique name):")
-    if user_id:
+    users = load_users()
+
+    tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
+
+    with tab1:
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+
+        if st.button("Login"):
+            if username in users and users[username] == hash_password(password):
+                st.session_state.user_authenticated = True
+                st.session_state.user_id = username
+                st.success(f"✅ Logged in as {username}")
+                st.rerun()
+            else:
+                st.error("❌ Invalid username or password")
+
+    with tab2:
+        new_username = st.text_input("New Username")
+        new_password = st.text_input("New Password", type="password")
+        if st.button("Register"):
+            if new_username in users:
+                st.warning("⚠️ Username already exists")
+            else:
+                users[new_username] = hash_password(new_password)
+                save_users(users)
+                st.success("✅ Registered successfully! Please login.")
+
+    if st.session_state.get("user_authenticated", False):
+        user_id = st.session_state.user_id
         chat_history = load_chat(user_id)
 
         st.markdown("### Chat Window")
@@ -124,7 +160,7 @@ if menu == "User":
                     "file": file_path
                 })
                 save_chat(user_id, chat_history)
-                st.session_state.user_input = ""  # clear text box
+                st.session_state.user_input = ""
                 st.rerun()
 
 
@@ -152,10 +188,9 @@ elif menu == "Admin":
         unread_users = get_unread_users()
 
         if user_list:
-            # Mark unread users with 🔴
             user_labels = [f"{u} 🔴" if u in unread_users else u for u in user_list]
             selected_user = st.selectbox("Select a user:", user_labels)
-            selected_user = selected_user.replace(" 🔴", "")  # cleanup label
+            selected_user = selected_user.replace(" 🔴", "")
 
             chat_history = load_chat(selected_user)
 
@@ -163,7 +198,6 @@ elif menu == "Admin":
             for chat in chat_history:
                 render_message(chat["role"], chat["message"], chat.get("time", ""), chat.get("file"))
 
-            # Reply box
             admin_reply = st.text_input("Your Reply:", key="admin_reply")
             admin_file = st.file_uploader("Upload a file (optional):", key="admin_file")
 
@@ -182,7 +216,7 @@ elif menu == "Admin":
                         "file": file_path
                     })
                     save_chat(selected_user, chat_history)
-                    st.session_state.admin_reply = ""  # clear text box
+                    st.session_state.admin_reply = ""
                     st.rerun()
         else:
             st.info("No users have started a chat yet.")
