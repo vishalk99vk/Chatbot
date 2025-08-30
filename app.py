@@ -1,78 +1,110 @@
 import streamlit as st
+import os
+import json
+import time
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []  # list of dicts: user, message, file, reply
-if "current_user" not in st.session_state:
-    st.session_state.current_user = None
-if "role" not in st.session_state:
-    st.session_state.role = None
-if "login_success" not in st.session_state:
-    st.session_state.login_success = False
+CHAT_DIR = "chats"
+ADMIN_PASSWORD = "admin123"  # change this
 
-# ---------- Login Page ----------
-def login():
-    st.title("Chat App Login")
-    role = st.selectbox("Select Role", ["User", "Admin"])
-    st.session_state.role = role
+if not os.path.exists(CHAT_DIR):
+    os.makedirs(CHAT_DIR)
 
-    if role == "User":
-        name = st.text_input("Enter your name")
-        if st.button("Proceed as User"):
-            if name:
-                st.session_state.current_user = name
-                st.session_state.login_success = True
+# --- Helper Functions ---
+def get_chat_path(user_id):
+    return os.path.join(CHAT_DIR, f"{user_id}.json")
+
+def load_chat(user_id):
+    path = get_chat_path(user_id)
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    return []
+
+def save_chat(user_id, chat_history):
+    path = get_chat_path(user_id)
+    with open(path, "w") as f:
+        json.dump(chat_history, f, indent=2)
+
+def get_all_users():
+    return [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
+
+def timestamp():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
+# --- Streamlit App ---
+st.set_page_config(page_title="Live Chat", layout="wide")
+st.title("💬 Live Chat System (User ↔ Admin)")
+
+menu = st.sidebar.radio("Login as:", ["User", "Admin"])
+
+# Auto-refresh every 2 seconds for live effect
+st_autorefresh = st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=True)
+if st_autorefresh:
+    st.experimental_autorefresh(interval=2000, key="refresh")
+
+
+# --- User Section ---
+if menu == "User":
+    user_id = st.text_input("Enter your User ID (any unique name):")
+    if user_id:
+        chat_history = load_chat(user_id)
+
+        st.markdown("### Chat Window")
+        for chat in chat_history:
+            msg_time = chat.get("time", "")
+            if chat["role"] == "user":
+                st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
             else:
-                st.error("Please enter your name!")
+                st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
-    elif role == "Admin":
-        password = st.text_input("Enter Admin Password", type="password")
-        if st.button("Proceed as Admin"):
-            if password == "admin123":  # set your admin password here
-                st.session_state.current_user = "Admin"
-                st.session_state.login_success = True
+        user_msg = st.text_input("Type your message:", key="user_input")
+        if st.button("Send", key="user_send"):
+            if user_msg:
+                chat_history.append({"role": "user", "message": user_msg, "time": timestamp()})
+                save_chat(user_id, chat_history)
+                st.rerun()
+
+
+# --- Admin Section ---
+elif menu == "Admin":
+    if "admin_authenticated" not in st.session_state:
+        st.session_state.admin_authenticated = False
+
+    if not st.session_state.admin_authenticated:
+        pwd = st.text_input("Enter Admin Password:", type="password")
+        if st.button("Login"):
+            if pwd == ADMIN_PASSWORD:
+                st.session_state.admin_authenticated = True
+                st.success("✅ Logged in as Admin")
+                st.rerun()
             else:
-                st.error("Incorrect Password!")
+                st.error("❌ Wrong Password")
 
-# ---------- Chat Interface ----------
-def chat_interface():
-    st.title(f"Welcome {st.session_state.current_user}")
+    else:
+        if st.button("🚪 Logout"):
+            st.session_state.admin_authenticated = False
+            st.rerun()
 
-    if st.session_state.role == "User":
-        # File upload
-        uploaded_file = st.file_uploader("Upload a file", type=None)
-        # Message input
-        message = st.text_area("Type your message here")
-        if st.button("Send Message"):
-            if message:
-                st.session_state.messages.append({
-                    "user": st.session_state.current_user,
-                    "message": message,
-                    "file": uploaded_file.name if uploaded_file else None,
-                    "reply": None
-                })
-                st.success("Message sent!")
-            else:
-                st.error("Please type a message before sending.")
+        user_list = get_all_users()
+        if user_list:
+            selected_user = st.selectbox("Select a user:", user_list)
+            chat_history = load_chat(selected_user)
 
-    elif st.session_state.role == "Admin":
-        st.subheader("User Messages")
-        if not st.session_state.messages:
-            st.info("No messages yet.")
-        for i, msg in enumerate(st.session_state.messages):
-            st.markdown(f"**{msg['user']}**: {msg['message']}")
-            if msg["file"]:
-                st.markdown(f"Uploaded File: {msg['file']}")
+            st.markdown(f"### Chat with {selected_user}")
+            for chat in chat_history:
+                msg_time = chat.get("time", "")
+                if chat["role"] == "user":
+                    st.markdown(f"<div style='text-align:left; color:blue;'>🧑‍💻 User ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+
             # Reply box
-            reply_key = f"reply_{i}"
-            reply = st.text_area(f"Reply to {msg['user']}", value=msg["reply"] or "", key=reply_key)
-            send_key = f"send_{i}"
-            if st.button(f"Send Reply", key=send_key):
-                st.session_state.messages[i]["reply"] = reply
-                st.success(f"Replied to {msg['user']}!")
-
-# ---------- Main ----------
-if not st.session_state.login_success:
-    login()
-else:
-    chat_interface()
+            admin_reply = st.text_input("Your Reply:", key="admin_reply")
+            if st.button("Send Reply"):
+                if admin_reply:
+                    chat_history.append({"role": "admin", "message": admin_reply, "time": timestamp()})
+                    save_chat(selected_user, chat_history)
+                    st.rerun()
+        else:
+            st.info("No users have started a chat yet.")
