@@ -2,20 +2,23 @@ import streamlit as st
 import os
 import json
 import time
-from datetime import datetime, timedelta
-from openai import OpenAI
+import openai
 
-# --- CONFIG ---
+# ---------------- CONFIG ----------------
 CHAT_DIR = "chats"
-ADMIN_PASSWORD = "Vishal@12345"   # change this
+USER_DIR = "users"
+ADMIN_PASSWORD = "admin123"  # Change this
+BOT_DELAY = 30  # seconds
+
+# OpenAI API key (make sure to set in Streamlit Secrets or env vars)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 if not os.path.exists(CHAT_DIR):
     os.makedirs(CHAT_DIR)
+if not os.path.exists(USER_DIR):
+    os.makedirs(USER_DIR)
 
-# 🔑 Load OpenAI API Key (set in Streamlit secrets or env variable)
-client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY")))
-
-
-# --- Helper Functions ---
+# ---------------- HELPERS ----------------
 def get_chat_path(user_id):
     return os.path.join(CHAT_DIR, f"{user_id}.json")
 
@@ -37,86 +40,107 @@ def get_all_users():
 def timestamp():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-def ai_bot_reply(user_message):
-    """Generate AI response using OpenAI API"""
+def user_path(user_id):
+    return os.path.join(USER_DIR, f"{user_id}.json")
+
+def register_user(user_id, password):
+    path = user_path(user_id)
+    if os.path.exists(path):
+        return False
+    with open(path, "w") as f:
+        json.dump({"password": password}, f)
+    return True
+
+def validate_user(user_id, password):
+    path = user_path(user_id)
+    if not os.path.exists(path):
+        return False
+    with open(path, "r") as f:
+        data = json.load(f)
+        return data.get("password") == password
+
+def ai_bot_reply(user_message, chat_history):
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Or gpt-4o-mini if enabled
             messages=[
-                {"role": "system", "content": "You are a helpful AI assistant responding on behalf of Admin."},
+                {"role": "system", "content": "You are an AI assistant replying temporarily on behalf of the admin. Keep responses short, professional, and helpful."},
+                *[{"role": m["role"], "content": m["message"]} for m in chat_history],
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=100
+            max_tokens=150
         )
-        return "🤖 Bot: " + response.choices[0].message.content.strip()
+        return response["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        return "🤖 Bot: Sorry, I'm having trouble generating a response right now."
+        return "⚠️ AI bot is currently unavailable."
 
-
-# --- Streamlit App ---
+# ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="Live Chat", layout="wide")
-st.title("💬 Live Chat System (User ↔ Admin + AI Bot Fallback)")
+st.title("💬 Live Chat System (User ↔ Admin + AI Backup)")
 
 menu = st.sidebar.radio("Login as:", ["User", "Admin"])
 
-# Auto-refresh every 2 seconds for live effect
+# Auto-refresh
 st_autorefresh = st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=True)
 if st_autorefresh:
     st.experimental_autorefresh(interval=2000, key="refresh")
 
-
-# --- User Section ---
+# ---------------- USER SECTION ----------------
 if menu == "User":
-    user_id = st.text_input("Enter your User ID (any unique name):")
-    password = st.text_input("Set/Enter Password:", type="password")
+    action = st.radio("Choose:", ["Login", "Register"])
+    user_id = st.text_input("User ID:")
 
-    if user_id and password:
+    if action == "Register":
+        pwd = st.text_input("Set Password:", type="password")
+        if st.button("Register"):
+            if register_user(user_id, pwd):
+                st.success("✅ Registered successfully! Now login.")
+            else:
+                st.error("❌ User already exists.")
+
+    elif action == "Login":
+        pwd = st.text_input("Password:", type="password")
+        if st.button("Login"):
+            if validate_user(user_id, pwd):
+                st.session_state["user_authenticated"] = True
+                st.session_state["current_user"] = user_id
+                st.success("✅ Logged in successfully")
+                st.rerun()
+            else:
+                st.error("❌ Invalid credentials")
+
+    if st.session_state.get("user_authenticated") and st.session_state.get("current_user") == user_id:
         chat_history = load_chat(user_id)
 
-        # Save password if new user
-        if not chat_history:
-            chat_history.append({"role": "system", "message": f"USER_PASSWORD:{password}", "time": timestamp()})
-            save_chat(user_id, chat_history)
+        st.markdown("### Chat Window")
+        for chat in chat_history:
+            msg_time = chat.get("time", "")
+            if chat["role"] == "user":
+                st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+            elif chat["role"] == "admin":
+                st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+            elif chat["role"] == "bot":
+                st.markdown(f"<div style='text-align:left; color:orange;'>🤖 AI Bot ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
 
-        # Verify password
-        stored_pwd = None
-        for entry in chat_history:
-            if entry["role"] == "system" and entry["message"].startswith("USER_PASSWORD:"):
-                stored_pwd = entry["message"].split(":")[1]
-                break
-
-        if stored_pwd != password:
-            st.error("❌ Wrong password")
-        else:
-            st.markdown("### Chat Window")
-            for chat in chat_history:
-                if chat["role"] == "system":  # skip system messages
-                    continue
-                msg_time = chat.get("time", "")
-                if chat["role"] == "user":
-                    st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='text-align:left; color:green;'>{chat['message']} ({msg_time})</div>", unsafe_allow_html=True)
-
-            # File upload
-            uploaded_file = st.file_uploader("📂 Upload a file", type=["jpg", "png", "pdf", "txt"])
-            if uploaded_file:
-                file_path = os.path.join(CHAT_DIR, f"{user_id}_{uploaded_file.name}")
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                chat_history.append({"role": "user", "message": f"📎 Uploaded file: {uploaded_file.name}", "time": timestamp()})
+        # Send message
+        user_msg = st.text_input("Type your message:", key="user_input")
+        if st.button("Send", key="user_send"):
+            if user_msg:
+                chat_history.append({"role": "user", "message": user_msg, "time": timestamp()})
                 save_chat(user_id, chat_history)
-                st.success(f"File {uploaded_file.name} uploaded!")
+                st.rerun()
 
-            user_msg = st.text_input("Type your message:", key="user_input")
-            if st.button("Send", key="user_send"):
-                if user_msg:
-                    chat_history.append({"role": "user", "message": user_msg, "time": timestamp()})
-                    save_chat(user_id, chat_history)
-                    st.rerun()
+        # File upload
+        uploaded_file = st.file_uploader("Upload a file")
+        if uploaded_file:
+            file_path = os.path.join(CHAT_DIR, f"{user_id}_{uploaded_file.name}")
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.success(f"File {uploaded_file.name} uploaded.")
+            st.download_button("📥 Download file", data=uploaded_file.getvalue(), file_name=uploaded_file.name)
 
 
-# --- Admin Section ---
+# ---------------- ADMIN SECTION ----------------
 elif menu == "Admin":
     if "admin_authenticated" not in st.session_state:
         st.session_state.admin_authenticated = False
@@ -141,31 +165,32 @@ elif menu == "Admin":
             selected_user = st.selectbox("Select a user:", user_list)
             chat_history = load_chat(selected_user)
 
-            # --- AI BOT AUTOREPLY (if no admin response in 30s) ---
-            if chat_history:
-                last_msg = chat_history[-1]
-                msg_time = datetime.strptime(last_msg["time"], "%Y-%m-%d %H:%M:%S")
-
-                if last_msg["role"] == "user":
-                    if datetime.now() - msg_time > timedelta(seconds=30):
-                        # Auto AI bot reply
-                        bot_response = ai_bot_reply(last_msg["message"])
-                        chat_history.append({
-                            "role": "admin",
-                            "message": bot_response,
-                            "time": timestamp()
-                        })
-                        save_chat(selected_user, chat_history)
-
             st.markdown(f"### Chat with {selected_user}")
+            last_user_msg, last_time = None, None
+            last_admin_time = None
+
             for chat in chat_history:
-                if chat["role"] == "system":
-                    continue
                 msg_time = chat.get("time", "")
                 if chat["role"] == "user":
                     st.markdown(f"<div style='text-align:left; color:blue;'>🧑‍💻 User ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-                else:
+                    last_user_msg, last_time = chat["message"], chat["time"]
+                elif chat["role"] == "admin":
                     st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+                    last_admin_time = chat["time"]
+                elif chat["role"] == "bot":
+                    st.markdown(f"<div style='text-align:left; color:orange;'>🤖 AI Bot ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+
+            # Auto bot response if admin idle
+            if last_user_msg:
+                last_msg_time_struct = time.strptime(last_time, "%Y-%m-%d %H:%M:%S")
+                last_msg_epoch = time.mktime(last_msg_time_struct)
+
+                if not last_admin_time or time.mktime(time.strptime(last_admin_time, "%Y-%m-%d %H:%M:%S")) < last_msg_epoch:
+                    if time.time() - last_msg_epoch > BOT_DELAY:
+                        ai_reply = ai_bot_reply(last_user_msg, chat_history)
+                        chat_history.append({"role": "bot", "message": ai_reply, "time": timestamp()})
+                        save_chat(selected_user, chat_history)
+                        st.rerun()
 
             # Reply box
             admin_reply = st.text_input("Your Reply:", key="admin_reply")
@@ -175,11 +200,10 @@ elif menu == "Admin":
                     save_chat(selected_user, chat_history)
                     st.rerun()
 
-            # Delete chat option
-            if st.button("🗑️ Delete this user's chat"):
+            # Delete chat
+            if st.button("🗑️ Delete Chat"):
                 os.remove(get_chat_path(selected_user))
                 st.success("Chat deleted.")
                 st.rerun()
-
         else:
             st.info("No users have started a chat yet.")
