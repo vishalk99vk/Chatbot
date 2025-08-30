@@ -13,7 +13,7 @@ from pathlib import Path
 CHAT_DIR = Path("chats")
 UPLOADS_DIR = Path("uploads")
 USERS_FILE = Path("users.json")
-ADMIN_PASSWORD = "admin123"  # <-- change this
+ADMIN_PASSWORD = "Vishal@12345"  # <-- change this
 BOT_DELAY_MINUTES = 3
 BOT_NAME = "🤖 AutoBot"
 
@@ -153,7 +153,7 @@ def maybe_post_bot_reply(user_id: str, history: list) -> None:
 
 # -------------------- APP --------------------
 st.set_page_config(page_title="Live Chat", layout="wide")
-st.title("💬 Live Chat (User ↔ Admin + AutoBot)")
+st.title("💬 Auto Chat Bot)")
 
 # Auto-refresh (off by default)
 if st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=False):
