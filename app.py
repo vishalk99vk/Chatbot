@@ -7,7 +7,7 @@ import time
 CHAT_DIR = "chats"
 UPLOAD_DIR = "uploads"
 USER_FILE = "users.json"
-ADMIN_PASSWORD = "admin123"  # change this
+ADMIN_PASSWORD = "Vishal@12345"  # change this
 
 # --- Setup Directories ---
 for d in [CHAT_DIR, UPLOAD_DIR]:
