@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # -----------------------------
 USERS_FILE = "users.json"
 CHATS_DIR = "chats"
-ADMIN_USERNAME = "admin"
+ADMIN_USERNAME = "abrakadbra"
 
 if not os.path.exists(CHATS_DIR):
     os.makedirs(CHATS_DIR)
