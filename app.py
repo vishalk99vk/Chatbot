@@ -146,7 +146,7 @@ def maybe_post_bot_reply(user_id: str, history: list) -> None:
     if datetime.now() - msg_time >= timedelta(minutes=BOT_DELAY_MINUTES):
         history.append({
             "role": "bot",
-            "message": "Thanks for your message! A human will reply soon. Meanwhile, can you share more details?",
+            "message": "Thanks for your message! we will reply soon after process data. Meanwhile, can you share more details?",
             "time": ts_str()
         })
         save_chat(user_id, history)
