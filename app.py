@@ -1,144 +1,93 @@
-import streamlit as st
 import os
 import json
-from datetime import datetime
-import base64
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
-# -------------------------
-# Setup
-# -------------------------
-CHAT_DIR = "chats"
-UPLOAD_DIR = "uploads"
-ADMIN_PASSWORD = "admin123"  # change for security
+# ===================== CONFIG ===================== #
+st.set_page_config(page_title="Live Chat System", layout="wide")
+CHAT_FILE = "chat_data.json"
 
-os.makedirs(CHAT_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# -------------------------
-# Helper Functions
-# -------------------------
-def get_chat_file(user_id):
-    return os.path.join(CHAT_DIR, f"{user_id}.json")
-
-def load_chat(user_id):
-    file_path = get_chat_file(user_id)
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
+# ===================== UTILITIES ===================== #
+def load_chat():
+    """Load chat history from file."""
+    if os.path.exists(CHAT_FILE):
+        with open(CHAT_FILE, "r") as f:
             return json.load(f)
     return []
 
-def save_chat(user_id, chat_history):
-    with open(get_chat_file(user_id), "w") as f:
-        json.dump(chat_history, f, indent=2)
+def save_chat(chat):
+    """Save chat history to file."""
+    with open(CHAT_FILE, "w") as f:
+        json.dump(chat, f)
 
-def get_all_users():
-    return [f.replace(".json", "") for f in os.listdir(CHAT_DIR)]
+# ===================== AUTO REFRESH ===================== #
+st_autorefresh(interval=1000, key="refresh")  # Auto refresh every 1s
 
-def format_time():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-# -------------------------
-# Streamlit Page Config
-# -------------------------
-st.set_page_config(page_title="Live Chat System", layout="wide")
-st.autorefresh(interval=1000, key="refresh")  # ✅ Auto refresh 1s
-
-st.title("💬 Real-Time Chat System")
-
-# -------------------------
-# Step 1: Role Selection
-# -------------------------
+# ===================== LOGIN PANEL ===================== #
 if "role" not in st.session_state:
+    st.title("🔐 Login Panel")
     role = st.radio("Who are you?", ["User", "Admin"])
     if st.button("Proceed"):
         st.session_state.role = role
         st.rerun()
-else:
-    role = st.session_state.role
+    st.stop()
 
-# -------------------------
-# USER PANEL
-# -------------------------
-if role == "User":
-    st.subheader("👤 User Panel")
-    user_id = st.text_input("Enter your User ID:", value="guest")
+role = st.session_state.role
+st.sidebar.title("⚙️ Options")
+if st.sidebar.button("🔄 Logout"):
+    st.session_state.clear()
+    st.rerun()
 
-    if user_id:
-        chat_history = load_chat(user_id)
+st.title(f"💬 Live Chat - {role} Panel")
 
-        # Display chat
-        st.markdown("### Chat History")
-        for chat in chat_history:
-            if chat["role"] == "user":
-                st.markdown(f"🧑 **You** ({chat['time']}): {chat['message']}")
-            elif chat["role"] == "admin":
-                st.markdown(f"👨‍💻 **Admin** ({chat['time']}): {chat['message']}")
-            elif chat["role"] == "file":
-                file_link = chat['file']
-                st.markdown(f"📎 **File uploaded at {chat['time']}** → {file_link}")
+# ===================== LOAD CHAT ===================== #
+chat_history = load_chat()
 
-        # Message box
-        msg = st.text_input("Type your message:")
-        if st.button("Send Message"):
-            if msg:
-                chat_history.append({"role": "user", "message": msg, "time": format_time()})
-                save_chat(user_id, chat_history)
-                st.rerun()
+# ===================== SHOW CHAT ===================== #
+st.markdown("### 📜 Chat History")
+for msg in chat_history:
+    if msg["sender"] == "User":
+        st.markdown(
+            f"<div style='background:#e6f7ff; padding:10px; border-radius:10px; margin:5px 0;'><b>User:</b> {msg['text']}</div>",
+            unsafe_allow_html=True,
+        )
+        if msg.get("file"):
+            st.write("📂 File uploaded by User:")
+            st.download_button(
+                label=f"Download {msg['file']['name']}",
+                data=bytes.fromhex(msg["file"]["data"]),
+                file_name=msg["file"]["name"],
+            )
 
-        # File upload
-        uploaded_file = st.file_uploader("Upload a file", type=None)
+    else:  # Admin message
+        st.markdown(
+            f"<div style='background:#fff0f6; padding:10px; border-radius:10px; margin:5px 0; text-align:right;'><b>Admin:</b> {msg['text']}</div>",
+            unsafe_allow_html=True,
+        )
+
+# ===================== INPUT SECTION ===================== #
+st.markdown("### ✏️ Send a Message")
+
+with st.form("chat_form", clear_on_submit=True):
+    message = st.text_input("Type your message...")
+    uploaded_file = st.file_uploader("Upload a file (optional)", type=None)
+
+    submitted = st.form_submit_button("Send")
+    if submitted and (message.strip() or uploaded_file):
+        new_msg = {"sender": role, "text": message.strip(), "file": None}
+
+        # Handle file upload
         if uploaded_file:
-            if uploaded_file.size > 200 * 1024 * 1024:  # 200 MB
-                st.error("🚨 Please upload this file to Google Drive and share the link instead.")
+            file_size_mb = uploaded_file.size / (1024 * 1024)
+            if file_size_mb > 200:
+                st.warning("⚠️ Please upload this file to Google Drive and share the link (file > 200 MB).")
             else:
-                file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+                file_data = uploaded_file.read()
+                new_msg["file"] = {
+                    "name": uploaded_file.name,
+                    "data": file_data.hex()
+                }
 
-                file_url = f"[📂 Download {uploaded_file.name}](./{file_path})"
-                chat_history.append({"role": "file", "file": file_url, "time": format_time()})
-                save_chat(user_id, chat_history)
-                st.success("✅ File uploaded & sent to Admin.")
-                st.rerun()
-
-# -------------------------
-# ADMIN PANEL
-# -------------------------
-elif role == "Admin":
-    st.subheader("👨‍💻 Admin Panel")
-
-    # Admin authentication
-    if "admin_authenticated" not in st.session_state:
-        pwd = st.text_input("Enter Admin Password:", type="password")
-        if st.button("Login"):
-            if pwd == ADMIN_PASSWORD:
-                st.session_state.admin_authenticated = True
-                st.rerun()
-            else:
-                st.error("Wrong password")
-
-    if st.session_state.get("admin_authenticated", False):
-        users = get_all_users()
-        if users:
-            selected_user = st.selectbox("Select a user:", users)
-            chat_history = load_chat(selected_user)
-
-            st.markdown(f"### Chat with {selected_user}")
-            for chat in chat_history:
-                if chat["role"] == "user":
-                    st.markdown(f"🧑 **User** ({chat['time']}): {chat['message']}")
-                elif chat["role"] == "admin":
-                    st.markdown(f"👨‍💻 **You** ({chat['time']}): {chat['message']}")
-                elif chat["role"] == "file":
-                    st.markdown(f"📎 **File uploaded at {chat['time']}** → {chat['file']}")
-
-            # Reply box
-            admin_reply = st.text_input("Your reply:")
-            if st.button("Send Reply"):
-                if admin_reply:
-                    chat_history.append({"role": "admin", "message": admin_reply, "time": format_time()})
-                    save_chat(selected_user, chat_history)
-                    st.rerun()
-
-        else:
-            st.info("No users have started chatting yet.")
+        chat_history.append(new_msg)
+        save_chat(chat_history)
+        st.rerun()
