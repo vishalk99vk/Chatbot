@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 # ------------------- Config -------------------
 CHAT_DIR = "chats"
 USER_FILE = "users.json"
-ADMIN_PASSWORD = "admin123"  # change this
+ADMIN_PASSWORD = "Vishal@12345"  # change this
 
 if not os.path.exists(CHAT_DIR):
     os.makedirs(CHAT_DIR)
