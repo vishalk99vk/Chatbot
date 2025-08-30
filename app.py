@@ -1,17 +1,11 @@
 import streamlit as st
-import time
+from streamlit_autorefresh import st_autorefresh
 
 # ----------------------------
 # CONFIG
 # ----------------------------
 st.set_page_config(page_title="Secure Chat App", layout="wide")
-ADMIN_PASS = "12345"  # 🔐 Change to a strong password or use st.secrets
-
-# ----------------------------
-# AUTO REFRESH (every 1s)
-# ----------------------------
-time.sleep(1)
-st.rerun()
+ADMIN_PASS = "12345"  # Change to strong password or store in st.secrets
 
 # ----------------------------
 # INIT SESSION STATE
@@ -19,9 +13,9 @@ st.rerun()
 if "role" not in st.session_state:
     st.session_state.role = None
 if "messages" not in st.session_state:
-    st.session_state.messages = []  # Store chat history
+    st.session_state.messages = []
 if "files" not in st.session_state:
-    st.session_state.files = []  # Store uploaded files
+    st.session_state.files = []
 
 
 # ----------------------------
@@ -53,32 +47,35 @@ if st.session_state.role is None:
 
 
 # ----------------------------
-# CHAT PANELS
+# CHAT REFRESHABLE CONTAINER
 # ----------------------------
+chat_container = st.empty()
+
 def render_chat():
-    """Render chat messages."""
-    for sender, msg in st.session_state.messages:
-        if sender == "User":
-            st.markdown(f"🧑 **User:** {msg}")
-        else:
-            st.markdown(f"👨‍💻 **Admin:** {msg}")
+    with chat_container.container():
+        st.subheader("💬 Chat Messages")
+        for sender, msg in st.session_state.messages:
+            if sender == "User":
+                st.markdown(f"🧑 **User:** {msg}")
+            else:
+                st.markdown(f"👨‍💻 **Admin:** {msg}")
+
+# Refresh ONLY chat every 1 second
+st_autorefresh(interval=1000, key="chat_refresh")
+render_chat()
 
 
 # ----------------------------
 # USER PANEL
 # ----------------------------
 if st.session_state.role == "User":
-    st.title("💬 User Panel")
+    st.title("🧑 User Panel")
 
-    render_chat()
-
-    # Send message
     user_msg = st.text_input("Type your message:")
     if st.button("Send", key="user_send") and user_msg:
         st.session_state.messages.append(("User", user_msg))
         st.rerun()
 
-    # Upload file
     uploaded_file = st.file_uploader("📂 Upload a file", type=None)
     if uploaded_file:
         size_mb = uploaded_file.size / (1024 * 1024)
@@ -88,7 +85,6 @@ if st.session_state.role == "User":
             st.session_state.files.append(("User", uploaded_file.name))
             st.success(f"✅ Uploaded: {uploaded_file.name}")
 
-    # Logout
     if st.button("Logout"):
         st.session_state.role = None
         st.rerun()
@@ -100,20 +96,15 @@ if st.session_state.role == "User":
 elif st.session_state.role == "Admin":
     st.title("🛡️ Admin Panel")
 
-    render_chat()
-
-    # Reply
     admin_msg = st.text_input("Reply to User:")
     if st.button("Send", key="admin_send") and admin_msg:
         st.session_state.messages.append(("Admin", admin_msg))
         st.rerun()
 
-    # Show uploaded files
     st.subheader("📂 Uploaded Files")
     for sender, fname in st.session_state.files:
         st.markdown(f"📄 From **{sender}**: {fname}")
 
-    # Logout
     if st.button("Logout"):
         st.session_state.role = None
         st.rerun()
