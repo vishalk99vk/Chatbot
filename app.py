@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # -----------------------------
 USERS_FILE = "users.json"
 CHATS_DIR = "chats"
-ADMIN_USERNAME = "abrakadbra"
+ADMIN_USERNAME = "admin"
 
 if not os.path.exists(CHATS_DIR):
     os.makedirs(CHATS_DIR)
@@ -120,12 +120,13 @@ if st.session_state.user:
 
             chat = load_chat(active_user)
             for msg in chat:
-               sender = msg.get("sender", "unknown")
-               time = msg.get("time", "")
-               message = msg.get("message", "")
-               st.write(f"**{sender}** [{time}]: {message}")
-                if "file" in msg and isinstance(msg["file"], str) and os.path.exists(msg["file"]):
-                    file_path = msg["file"]
+                sender = msg.get("sender", "unknown")
+                time = msg.get("time", "")
+                message = msg.get("message", "")
+                st.write(f"**{sender}** [{time}]: {message}")
+
+                file_path = msg.get("file")
+                if isinstance(file_path, str) and os.path.exists(file_path):
                     file_name = os.path.basename(file_path)
                     with open(file_path, "rb") as f:
                         st.download_button(
@@ -157,10 +158,18 @@ if st.session_state.user:
         st.title(f"💬 Chat with Admin")
         chat = load_chat(username)
 
+        unread = any(msg.get("sender") == "admin" and not msg.get("read", False) for msg in chat)
+        if unread:
+            st.subheader(f"🔴 You have {sum(1 for msg in chat if msg.get('sender')=='admin' and not msg.get('read',False))} unread message(s)")
+
         for msg in chat:
-            st.write(f"**{msg['sender']}** [{msg['time']}]: {msg['message']}")
-            if "file" in msg and isinstance(msg["file"], str) and os.path.exists(msg["file"]):
-                file_path = msg["file"]
+            sender = msg.get("sender", "unknown")
+            time = msg.get("time", "")
+            message = msg.get("message", "")
+            st.write(f"**{sender}** [{time}]: {message}")
+
+            file_path = msg.get("file")
+            if isinstance(file_path, str) and os.path.exists(file_path):
                 file_name = os.path.basename(file_path)
                 with open(file_path, "rb") as f:
                     st.download_button(
@@ -169,8 +178,9 @@ if st.session_state.user:
                         file_name=file_name,
                         mime="application/octet-stream"
                     )
-            # Mark admin messages as read when displayed
-            if msg["sender"] == "admin":
+
+            # Mark admin messages as read
+            if msg.get("sender") == "admin":
                 msg["read"] = True
         save_chat(username, chat)
 
