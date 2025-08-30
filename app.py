@@ -1,127 +1,68 @@
 import streamlit as st
-import time
-import threading
 
-# ----------------------------
-# CONFIG
-# ----------------------------
-st.set_page_config(page_title="Secure Chat App", layout="wide")
-ADMIN_PASS = "12345"  # Change this for security
-
-# ----------------------------
-# INIT SESSION STATE
-# ----------------------------
+# Initialize session state variables
+if "messages" not in st.session_state:
+    st.session_state.messages = []  # store all messages as dict
+if "files" not in st.session_state:
+    st.session_state.files = []  # store files uploaded
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
 if "role" not in st.session_state:
     st.session_state.role = None
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "files" not in st.session_state:
-    st.session_state.files = []
-if "chat_running" not in st.session_state:
-    st.session_state.chat_running = False
 
+# Function to handle login
+def login():
+    role = st.selectbox("Select Role", ["User", "Admin"])
+    st.session_state.role = role
 
-# ----------------------------
-# CHAT UPDATER (runs in thread)
-# ----------------------------
-def chat_updater(placeholder):
-    while st.session_state.chat_running:
-        with placeholder.container():
-            st.subheader("💬 Chat Messages (auto-updating)")
-            for sender, msg, uname in st.session_state.messages:
-                if sender == "User":
-                    st.markdown(f"🧑 **{uname}:** {msg}")
-                else:
-                    st.markdown(f"👨‍💻 **Admin:** {msg}")
-        time.sleep(1)
+    if role == "User":
+        name = st.text_input("Enter your name")
+        if st.button("Proceed") and name:
+            st.session_state.current_user = name
+            st.session_state.login_success = True
+    elif role == "Admin":
+        password = st.text_input("Enter Admin Password", type="password")
+        if st.button("Proceed") and password == "admin123":  # example password
+            st.session_state.current_user = "Admin"
+            st.session_state.login_success = True
+        elif st.button("Proceed") and password != "admin123":
+            st.error("Incorrect Password!")
 
+# Function to display messages for user/admin
+def chat_interface():
+    st.header(f"Welcome {st.session_state.current_user}")
 
-# ----------------------------
-# LOGIN PANEL
-# ----------------------------
-if st.session_state.role is None:
-    st.title("🔐 Login Panel")
+    if st.session_state.role == "User":
+        # File upload
+        uploaded_file = st.file_uploader("Upload a file", type=None)
+        # Message input
+        message = st.text_area("Type your message here")
+        if st.button("Send"):
+            st.session_state.messages.append({
+                "user": st.session_state.current_user,
+                "message": message,
+                "file": uploaded_file.name if uploaded_file else None,
+                "reply": None
+            })
+            st.success("Message sent!")
 
-    role = st.radio("Who are you?", ["User", "Admin"])
+    elif st.session_state.role == "Admin":
+        st.subheader("User Messages")
+        for i, msg in enumerate(st.session_state.messages):
+            st.markdown(f"**{msg['user']}**: {msg['message']}")
+            if msg["file"]:
+                st.markdown(f"Uploaded File: {msg['file']}")
+            # Reply box
+            reply = st.text_area(f"Reply to {msg['user']}", key=f"reply_{i}")
+            if st.button(f"Send Reply to {msg['user']}", key=f"send_{i}"):
+                st.session_state.messages[i]["reply"] = reply
+                st.success(f"Replied to {msg['user']}!")
 
-    if role == "Admin":
-        admin_password = st.text_input("Enter Admin Password:", type="password")
-        if st.button("Proceed as Admin"):
-            if admin_password == ADMIN_PASS:
-                st.session_state.role = "Admin"
-                st.success("✅ Logged in as Admin!")
-                st.rerun()
-            else:
-                st.error("❌ Incorrect password")
+# Main logic
+if "login_success" not in st.session_state:
+    st.session_state.login_success = False
 
-    else:  # User login
-        username = st.text_input("Enter your name:")
-        if st.button("Proceed as User"):
-            if username.strip():
-                st.session_state.role = "User"
-                st.session_state.username = username.strip()
-                st.success(f"✅ Logged in as User: {username}")
-                st.rerun()
-            else:
-                st.warning("⚠️ Please enter your name before continuing.")
-
-    st.stop()
-
-
-# ----------------------------
-# CHAT AREA (ONLY REFRESHES)
-# ----------------------------
-chat_placeholder = st.empty()
-
-if not st.session_state.chat_running:
-    st.session_state.chat_running = True
-    thread = threading.Thread(target=chat_updater, args=(chat_placeholder,), daemon=True)
-    thread.start()
-
-
-# ----------------------------
-# USER PANEL
-# ----------------------------
-if st.session_state.role == "User":
-    st.title(f"🧑 User Panel - Welcome {st.session_state.username}")
-
-    user_msg = st.text_input("Type your message:")
-    if st.button("Send", key="user_send") and user_msg:
-        st.session_state.messages.append(("User", user_msg, st.session_state.username))
-
-    uploaded_file = st.file_uploader("📂 Upload a file")  # no type filter
-    if uploaded_file:
-        size_mb = uploaded_file.size / (1024 * 1024)
-        if size_mb > 200:
-            st.warning("⚠️ Please upload this file on Google Drive and share the link instead.")
-        else:
-            st.session_state.files.append((st.session_state.username, uploaded_file.name))
-            st.success(f"✅ Uploaded: {uploaded_file.name}")
-
-    if st.button("Logout"):
-        st.session_state.chat_running = False
-        st.session_state.role = None
-        st.session_state.username = None
-        st.rerun()
-
-
-# ----------------------------
-# ADMIN PANEL
-# ----------------------------
-elif st.session_state.role == "Admin":
-    st.title("🛡️ Admin Panel")
-
-    admin_msg = st.text_input("Reply to User:")
-    if st.button("Send", key="admin_send") and admin_msg:
-        st.session_state.messages.append(("Admin", admin_msg, None))
-
-    st.subheader("📂 Uploaded Files")
-    for uname, fname in st.session_state.files:
-        st.markdown(f"📄 From **{uname}**: {fname}")
-
-    if st.button("Logout"):
-        st.session_state.chat_running = False
-        st.session_state.role = None
-        st.rerun()
+if not st.session_state.login_success:
+    login()
+else:
+    chat_interface()
