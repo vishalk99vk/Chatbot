@@ -5,10 +5,12 @@ import time
 from streamlit_autorefresh import st_autorefresh
 
 CHAT_DIR = "chats"
+UPLOAD_DIR = "uploads"
 ADMIN_PASSWORD = "admin123"  # change this
 
-if not os.path.exists(CHAT_DIR):
-    os.makedirs(CHAT_DIR)
+# Ensure directories exist
+os.makedirs(CHAT_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # --- Helper Functions ---
 def get_chat_path(user_id):
@@ -29,35 +31,45 @@ def save_chat(user_id, chat_history):
 def get_all_users():
     return [f.replace(".json", "") for f in os.listdir(CHAT_DIR) if f.endswith(".json")]
 
+def get_unread_users():
+    """Users whose last message is from the user (not admin)"""
+    unread = []
+    for u in get_all_users():
+        chats = load_chat(u)
+        if chats and chats[-1]["role"] == "user":
+            unread.append(u)
+    return unread
+
 def timestamp():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-def render_message(role, message, msg_time):
-    """Pretty chat bubbles like WhatsApp"""
+def render_message(role, message, msg_time, file_path=None):
+    """Pretty chat bubbles like WhatsApp, with optional file attachment"""
     if role == "user":
-        st.markdown(
-            f"""
-            <div style="text-align:right; margin:6px;">
-                <div style="background-color:#DCF8C6; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
-                    {message}
-                </div><br>
-                <small>{msg_time}</small>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        align = "right"
+        color = "#DCF8C6"
+        sender = "🧑‍💻 You"
     else:
-        st.markdown(
-            f"""
-            <div style="text-align:left; margin:6px;">
-                <div style="background-color:#EDEDED; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
-                    {message}
-                </div><br>
-                <small>{msg_time}</small>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        align = "left"
+        color = "#EDEDED"
+        sender = "👨‍💼 Admin"
+
+    file_html = ""
+    if file_path:
+        filename = os.path.basename(file_path)
+        file_html = f"<br><a href='{file_path}' target='_blank'>📎 {filename}</a>"
+
+    st.markdown(
+        f"""
+        <div style="text-align:{align}; margin:6px;">
+            <div style="background-color:{color}; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
+                {message}{file_html}
+            </div><br>
+            <small>{sender} • {msg_time}</small>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # --- Streamlit App ---
@@ -80,12 +92,25 @@ if menu == "User":
 
         st.markdown("### Chat Window")
         for chat in chat_history:
-            render_message(chat["role"], chat["message"], chat.get("time", ""))
+            render_message(chat["role"], chat["message"], chat.get("time", ""), chat.get("file"))
 
         user_msg = st.text_input("Type your message:", key="user_input")
+        uploaded_file = st.file_uploader("Upload a file (optional):", key="user_file")
+
         if st.button("Send", key="user_send"):
-            if user_msg:
-                chat_history.append({"role": "user", "message": user_msg, "time": timestamp()})
+            if user_msg or uploaded_file:
+                file_path = None
+                if uploaded_file:
+                    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+
+                chat_history.append({
+                    "role": "user",
+                    "message": user_msg if user_msg else "",
+                    "time": timestamp(),
+                    "file": file_path
+                })
                 save_chat(user_id, chat_history)
                 st.session_state.user_input = ""  # clear text box
                 st.rerun()
@@ -112,19 +137,38 @@ elif menu == "Admin":
             st.rerun()
 
         user_list = get_all_users()
+        unread_users = get_unread_users()
+
         if user_list:
-            selected_user = st.selectbox("Select a user:", user_list)
+            # Mark unread users with 🔴
+            user_labels = [f"{u} 🔴" if u in unread_users else u for u in user_list]
+            selected_user = st.selectbox("Select a user:", user_labels)
+            selected_user = selected_user.replace(" 🔴", "")  # cleanup label
+
             chat_history = load_chat(selected_user)
 
             st.markdown(f"### Chat with {selected_user}")
             for chat in chat_history:
-                render_message(chat["role"], chat["message"], chat.get("time", ""))
+                render_message(chat["role"], chat["message"], chat.get("time", ""), chat.get("file"))
 
             # Reply box
             admin_reply = st.text_input("Your Reply:", key="admin_reply")
+            admin_file = st.file_uploader("Upload a file (optional):", key="admin_file")
+
             if st.button("Send Reply"):
-                if admin_reply:
-                    chat_history.append({"role": "admin", "message": admin_reply, "time": timestamp()})
+                if admin_reply or admin_file:
+                    file_path = None
+                    if admin_file:
+                        file_path = os.path.join(UPLOAD_DIR, admin_file.name)
+                        with open(file_path, "wb") as f:
+                            f.write(admin_file.getbuffer())
+
+                    chat_history.append({
+                        "role": "admin",
+                        "message": admin_reply if admin_reply else "",
+                        "time": timestamp(),
+                        "file": file_path
+                    })
                     save_chat(selected_user, chat_history)
                     st.session_state.admin_reply = ""  # clear text box
                     st.rerun()
