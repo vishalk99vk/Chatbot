@@ -153,7 +153,7 @@ def maybe_post_bot_reply(user_id: str, history: list) -> None:
 
 # -------------------- APP --------------------
 st.set_page_config(page_title="Live Chat", layout="wide")
-st.title("💬 Auto Chat Bot)")
+st.title("💬 Auto Chat Bot")
 
 # Auto-refresh (off by default)
 if st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=False):
