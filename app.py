@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import json
 import time
+from streamlit_autorefresh import st_autorefresh
 
 CHAT_DIR = "chats"
 ADMIN_PASSWORD = "admin123"  # change this
@@ -31,6 +32,33 @@ def get_all_users():
 def timestamp():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
+def render_message(role, message, msg_time):
+    """Pretty chat bubbles like WhatsApp"""
+    if role == "user":
+        st.markdown(
+            f"""
+            <div style="text-align:right; margin:6px;">
+                <div style="background-color:#DCF8C6; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
+                    {message}
+                </div><br>
+                <small>{msg_time}</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <div style="text-align:left; margin:6px;">
+                <div style="background-color:#EDEDED; padding:10px; border-radius:10px; display:inline-block; max-width:70%;">
+                    {message}
+                </div><br>
+                <small>{msg_time}</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Live Chat", layout="wide")
@@ -39,9 +67,9 @@ st.title("💬 Live Chat System (User ↔ Admin)")
 menu = st.sidebar.radio("Login as:", ["User", "Admin"])
 
 # Auto-refresh every 2 seconds for live effect
-st_autorefresh = st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=True)
-if st_autorefresh:
-    st.experimental_autorefresh(interval=2000, key="refresh")
+st_autorefresh_enabled = st.sidebar.checkbox("🔄 Auto-refresh every 2s", value=True)
+if st_autorefresh_enabled:
+    st_autorefresh(interval=2000, key="refresh")
 
 
 # --- User Section ---
@@ -52,17 +80,14 @@ if menu == "User":
 
         st.markdown("### Chat Window")
         for chat in chat_history:
-            msg_time = chat.get("time", "")
-            if chat["role"] == "user":
-                st.markdown(f"<div style='text-align:right; color:blue;'>🧑‍💻 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='text-align:left; color:green;'>👨‍💼 Admin ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+            render_message(chat["role"], chat["message"], chat.get("time", ""))
 
         user_msg = st.text_input("Type your message:", key="user_input")
         if st.button("Send", key="user_send"):
             if user_msg:
                 chat_history.append({"role": "user", "message": user_msg, "time": timestamp()})
                 save_chat(user_id, chat_history)
+                st.session_state.user_input = ""  # clear text box
                 st.rerun()
 
 
@@ -93,11 +118,7 @@ elif menu == "Admin":
 
             st.markdown(f"### Chat with {selected_user}")
             for chat in chat_history:
-                msg_time = chat.get("time", "")
-                if chat["role"] == "user":
-                    st.markdown(f"<div style='text-align:left; color:blue;'>🧑‍💻 User ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='text-align:right; color:green;'>👨‍💼 You ({msg_time}): {chat['message']}</div>", unsafe_allow_html=True)
+                render_message(chat["role"], chat["message"], chat.get("time", ""))
 
             # Reply box
             admin_reply = st.text_input("Your Reply:", key="admin_reply")
@@ -105,6 +126,7 @@ elif menu == "Admin":
                 if admin_reply:
                     chat_history.append({"role": "admin", "message": admin_reply, "time": timestamp()})
                     save_chat(selected_user, chat_history)
+                    st.session_state.admin_reply = ""  # clear text box
                     st.rerun()
         else:
             st.info("No users have started a chat yet.")
